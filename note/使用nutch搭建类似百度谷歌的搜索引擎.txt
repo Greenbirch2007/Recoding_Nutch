@@ -1,0 +1,102 @@
+使用nutch搭建类似百度/谷歌的搜索引擎
+https://www.jianshu.com/p/2e2d5f00de22
+
+
+Nutch是基于Lucene实现的搜索引擎。包括全文搜索和Web爬虫。Lucene为Nutch提供了文本索引和搜索的API。
+
+
+1.安装
+1.安装tomcat
+
+[root@localhost ~]# wget https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.1/bin/apache-tomcat-9.0.1.tar.gz
+[root@localhost ~]# tar xvzf apache-tomcat-9.0.1.tar.gz -C /usr/local/
+[root@localhost ~]# cd /usr/local/
+[root@localhost local]# mv apache-tomcat-9.0.1/ tomcat
+[root@localhost local]# /usr/local/tomcat/bin/startup.sh
+
+启动后访问 http://localhost:8080 就可以看到web服务器正常。14339
+
+2.部署nutch
+这里nutch用1.2版本，虽然现在已经很高版本了，但是1.2以上已经没有war包，没法做类似百度这种页面的搜索了，而是nutch转而给solr提供搜索支持。
+
+
+[root@localhost ~]# wget http://archive.apache.org/dist/nutch/apache-nutch-1.2-bin.tar.gz
+[root@localhost ~]# tar xvf apache-nutch-1.2-bin.tar.gz -C /usr/local/
+[root@localhost ~]# cd /usr/local/nutch-1.2/
+[root@localhost local]# mv nutch-1.2/ nutch
+[root@localhost local]# cd nutch/
+[root@localhost nutch]# cp nutch-1.2.war /usr/local/tomcat/webapps/nutch.war
+
+
+apache下，当浏览器访问 http://localhost:8080/nutch 时nutch的war包会被自动解压部署。可以看到我们的搜索页面
+
+2.爬取数据
+nutch目录下，新建文件url.txt，把我们要抓的网站填入，内容
+
+https://www.hicool.top/
+有个过滤规则，我们上一步填入的网站，需要经过这个规则过滤才可抓取，否则不能。修改过滤规则，查看conf/craw-urlfilter.txt文件
+
+
+# accept hosts in MY.DOMAIN.NAME
++^http://([a-z0-9]*\.)*MY.DOMAIN.NAME/
+这其实是一个正则表达式，把加号那一行，改为仅仅允许自己网站通过
+
++^http://([a-z0-9]*\.)*hicool.top/
+
+
+这样可以只把自己的网站抓下来了。修改conf/nutch-site.xml文件，在configuration标签内增加如下索引目录属性，指定检索器读取数据的路径。另外增加一个http.agent.name和一个http.robots.agents节点，否则不能抓取。因为nutch遵守了 robots协议，在爬行人家网站的时候，把自己的信息提交给被爬行的网站以供识别。
+<property>
+    <name>http.agent.name</name>
+    <value>hicool.top</value>
+    <description>Hello，welcom to visit www.hicool.top</description>
+</property>
+<property>
+    <name>http.robots.agents</name>
+    <value>hicool.top,*</value>
+</property>
+<property>
+    <name>searcher.dir</name>
+    <value>/usr/local/nutch/crawl</value>
+    <description></description>
+</property>
+
+searcher.dir是指定搜索结果存放路径。http.agent.name的value随便填一个，而http.robots.agents的value必须填你的的http.agent.name的值，否则报错"Your 'http.agent.name' value should be listed first in 'http.robots.agents' property"。
+
+3.在web页面展示搜索结果
+修改/usr/local/tomcat/webapps/nutch/WEB-INF/classes/nutch-site.xml
+
+把我们上一步抓取数据的存放路径配置到tomcat下，重启tomcat，就可以在浏览器中搜索了。
+
+
+4.筛选链接
+有些链接我们需要抓取，有些我们则需要排除掉。怎样才能有一个筛选机制，过滤掉冗余的链接呢？
+
+编辑conf/regex-urlfilter.txt
+
+我现在只想抓取 https://www.hicool.top/article/324 类似这样的，只把 /article/* 下的内容抓出来的需求。修改如下
+
+抓取动态内容
+我们平常访问网站的时候，往往有"?"以及后面带参数，这种动态的内容默认也不抓取，需要配置。
+
+在conf下面的2个文件：regex-urlfilter.txt，crawl-urlfilter.txt
+
+5.按词划分和中文分词
+看看上文最后的效果，你会发现，搜索是按单个字来区分的，你输入一句话，每个字都被单独搜了一遍，导致不想关的信息太冗余。原来，nutch默认对中文按字划分，而不是按词划分。
+so，我们要达到按词划分以减少冗余的目的，则：
+1.修改源代码。直接对Nutch分词处理类进行修改，调用已写好的一些分词组件进行分词。
+2.使用分词插件。按照Nutch的插件编写规则重新编写或者添加中文分词插件。
+这里我使用修改源码方式，得下载源码重新编译了。关于 IKAnalyzer3.2.8.jar 这个包，我是在网上搜到下载的。可以看这篇 https://github.com/wks/ik-analyzer 安装此包。
+
+
+[root@localhost ~]# wget http://archive.apache.org/dist/nutch/apache-nutch-1.2-src.tar.gz
+[root@localhost ~]# tar xvf apache-nutch-1.2-src.tar.gz -C /usr/local/
+[root@localhost ~]# cd /usr/local/
+[root@localhost local]# mv apache-nutch-1.2/ nutch
+[root@localhost local]# cd nutch
+[root@localhost nutch]# mv ~/IKAnalyzer3.2.8.jar lib/
+
+
+
+
+
+
